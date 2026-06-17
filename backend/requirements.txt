@@ -1,0 +1,15 @@
+fastapi==0.115.6
+uvicorn[standard]==0.34.0
+pydantic-settings==2.7.1
+sqlalchemy==2.0.36
+pymysql==1.1.1
+cryptography==44.0.0
+langchain==0.3.14
+langchain-core==0.3.29
+langchain-openai==0.2.14
+langgraph==0.2.61
+qdrant-client==1.12.1
+elasticsearch==8.17.0
+python-dotenv==1.0.1
+akshare==1.16.94
+python-multipart==0.0.20
