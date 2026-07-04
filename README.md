@@ -1,41 +1,82 @@
-# NL2SQL Intelligent Query System 2.0
+# Financial Data Agent Query System
 
 English | [中文](#中文)
 
-An end-to-end NL2SQL demo for financial data exploration. It combines FastAPI, LangGraph, SQLAlchemy, MySQL, Qdrant, Elasticsearch, and a React/Vite frontend. Version 2.0 adds a general CSV ingestion workflow: upload any CSV file from the browser, automatically create a MySQL `uploaded_*` table, generate metadata, rebuild retrieval indexes, and query the uploaded dataset with natural language.
+An end-to-end financial data Agent system for natural-language data query and analysis. The project combines FastAPI, LangGraph, LangChain, SQLAlchemy, MySQL, Qdrant, Elasticsearch, React, TypeScript, and Docker Compose.
+
+The system supports multi-turn chat, LLM-based intent routing, LLM-first NL2SQL generation, read-only SQL validation, RAG metadata retrieval, CSV ingestion, and a configurable Skill/Tool extension layer for financial analysis.
 
 ## Features
 
-- Natural-language to SQL workflow with LangGraph
-- Hybrid metadata retrieval through Qdrant, Elasticsearch, and MySQL fallback
-- Read-only SQL validation and repair before execution
-- Built-in financial demo schema and seed data
-- Browser-based CSV upload and automatic table creation
-- Metadata generation for uploaded tables and columns
-- Optional OpenAI-powered SQL generation when `OPENAI_API_KEY` is configured
-- React query workspace showing workflow steps, retrieved context, generated SQL, and result rows
+- Chat-style financial data Agent UI
+- Multi-turn short-term memory based on `session_id`
+- LLM intent routing: `data_query`, `data_analysis`, `general_chat`
+- LLM-first SQL generation with rule-based fallback
+- Hybrid metadata retrieval with Qdrant, Elasticsearch, and MySQL fallback
+- Read-only SQL validation and automatic `LIMIT` repair
+- Natural-language analysis based on SQL results
+- General CSV upload with automatic table creation and metadata indexing
+- Skill/Tool extension system under `agent_extensions/`
+- Default tools for valuation, trend, risk, and dataset profiling
 
 ## Architecture
 
 ```text
-Frontend CSV upload / query
-  -> FastAPI routes
-  -> CSV importer or NL2SQL service
-  -> MetadataCatalog + uploaded_* MySQL tables
-  -> Qdrant / Elasticsearch metadata indexes
-  -> LangGraph NL2SQL workflow
-  -> Read-only SQL execution
+React chat frontend
+  -> FastAPI /api/chat
+  -> short-term chat memory
+  -> LLM intent router
+  -> metadata retrieval: Qdrant + Elasticsearch + MySQL fallback
+  -> LLM-first SQL generation
+  -> read-only SQL validation and repair
+  -> SQLAlchemy execution on MySQL
+  -> Skill/Tool result analysis
+  -> natural-language answer
 ```
 
-See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) and [docs/project_file_sequence_hierarchical_v2.svg](docs/project_file_sequence_hierarchical_v2.svg) for a file-level flow diagram.
+CSV ingestion flow:
+
+```text
+CSV upload
+  -> encoding detection and header cleanup
+  -> MySQL type inference
+  -> uploaded_* table creation
+  -> batch insert
+  -> MetadataCatalog update
+  -> Qdrant / Elasticsearch index rebuild
+  -> natural-language query and Tool analysis
+```
 
 ## Tech Stack
 
-- Backend: FastAPI, SQLAlchemy, LangGraph, LangChain
+- Backend: FastAPI, LangGraph, LangChain, SQLAlchemy
+- LLM: OpenAI-compatible chat completion API
 - Database: MySQL
 - Retrieval: Qdrant, Elasticsearch, MySQL fallback
-- Frontend: React, Vite, TypeScript
-- Optional data source helper: AKShare
+- Frontend: React, TypeScript, Vite
+- Infrastructure: Docker Compose
+- Optional data helper: AKShare
+
+## Built-in Skills and Tools
+
+Skills are configured in `agent_extensions/skills/`.
+
+| Skill | Purpose |
+| --- | --- |
+| `trend_analysis` | Matches trend, price, moving average, volatility, and market-performance questions |
+| `valuation_analysis` | Matches PE, valuation, ROE, financial metric, ranking, highest/lowest questions |
+| `dataset_profile` | Matches CSV, uploaded dataset, fields, distribution, missing-value, and profiling questions |
+
+Tools are configured in `agent_extensions/tools/`.
+
+| Tool | Purpose |
+| --- | --- |
+| `moving_average_trend` | Computes latest value, interval change, MA5/MA10, and short-term trend |
+| `return_risk_summary` | Computes interval return, volatility, maximum drawdown, min, and max |
+| `valuation_snapshot` | Computes average, min, max, and ranking summary for valuation/financial metrics |
+| `dataset_profile` | Computes row count, column count, missing values, numeric ranges, and sample fields |
+
+To add a new configuration-only skill, add a JSON file under `agent_extensions/skills/` and reference existing tool names. To add a new executable tool, implement and register a Python function in `backend/app/services/skill_tool_manager.py`, then add its JSON metadata under `agent_extensions/tools/`.
 
 ## Prerequisites
 
@@ -79,7 +120,7 @@ pip install -r backend/requirements.txt
 cp .env.example .env
 ```
 
-On Windows PowerShell:
+Windows PowerShell:
 
 ```powershell
 Copy-Item .env.example .env
@@ -93,7 +134,7 @@ python backend/app/db/init_db.py
 python -c "from app.services.metadata_indexer import MetadataIndexer; print(MetadataIndexer().rebuild())"
 ```
 
-On Windows PowerShell:
+Windows PowerShell:
 
 ```powershell
 $env:PYTHONPATH="$PWD\backend"
@@ -104,7 +145,7 @@ python -c "from app.services.metadata_indexer import MetadataIndexer; print(Meta
 6. Start the backend.
 
 ```bash
-uvicorn app.main:app --app-dir backend --host 0.0.0.0 --port 8000
+uvicorn app.main:app --app-dir backend --host 127.0.0.1 --port 8000
 ```
 
 7. Start the frontend in another terminal.
@@ -115,40 +156,11 @@ npm install
 npm run dev
 ```
 
-Open the frontend URL printed by Vite.
-
-## CSV Upload Workflow
-
-1. Download or prepare a CSV file with a header row.
-2. Open the frontend.
-3. Use the CSV upload button in the left sidebar.
-4. The backend will:
-   - decode UTF-8/GBK CSV content,
-   - infer MySQL column types,
-   - create an `uploaded_*` table,
-   - insert rows,
-   - write table and column metadata,
-   - rebuild Qdrant and Elasticsearch indexes.
-5. Ask questions such as:
+Open:
 
 ```text
-query akshare_sample_market close_price
-查询 akshare_sample_market 数据
+http://127.0.0.1:5173
 ```
-
-A small sample file is included at [data_samples/akshare_sample_market.csv](data_samples/akshare_sample_market.csv).
-
-## Optional AKShare Import Helper
-
-The main 2.0 workflow is browser-based CSV upload. The repository also includes a command-line helper for importing one AKShare A-share historical market dataset into the built-in `daily_market` table:
-
-```bash
-export PYTHONPATH=./backend
-python backend/app/data_importers/akshare_stock_importer.py --symbol 600519 --name 贵州茅台 --industry 食品饮料 --start-date 20240601 --end-date 20240614
-python -c "from app.services.metadata_indexer import MetadataIndexer; print(MetadataIndexer().rebuild())"
-```
-
-AKShare documentation: <https://akshare.akfamily.xyz/data/stock/stock.html>
 
 ## Configuration
 
@@ -160,8 +172,18 @@ Backend configuration is read from `.env`.
 | `QDRANT_URL` | Qdrant HTTP endpoint |
 | `ELASTICSEARCH_URL` | Elasticsearch endpoint |
 | `CORS_ORIGINS` | Comma-separated frontend origins |
-| `OPENAI_API_KEY` | Optional OpenAI API key |
-| `OPENAI_MODEL` | Optional model name for LLM SQL generation |
+| `OPENAI_API_KEY` | OpenAI-compatible API key |
+| `OPENAI_MODEL` | Chat model name |
+| `OPENAI_BASE_URL` | Optional OpenAI-compatible base URL |
+
+Example for Zhipu/OpenAI-compatible API:
+
+```env
+OPENAI_MODEL=glm-5.2
+OPENAI_BASE_URL=https://open.bigmodel.cn/api/paas/v4/
+```
+
+Do not commit `.env`.
 
 Frontend configuration can be set in `frontend/.env`:
 
@@ -169,65 +191,132 @@ Frontend configuration can be set in `frontend/.env`:
 VITE_API_BASE_URL=http://localhost:8000
 ```
 
+## API Overview
+
+| Endpoint | Description |
+| --- | --- |
+| `POST /api/chat/message` | Chat request with full JSON response |
+| `POST /api/chat/stream` | SSE chat stream for frontend |
+| `DELETE /api/chat/sessions/{session_id}` | Clear short-term memory |
+| `POST /api/nl2sql/query` | Compatibility NL2SQL JSON query |
+| `POST /api/nl2sql/stream` | Compatibility NL2SQL SSE query |
+| `POST /api/datasets/upload` | Upload CSV and rebuild indexes |
+| `GET /api/metadata/search` | Search metadata |
+| `POST /api/metadata/index` | Rebuild metadata indexes |
+| `GET /api/extensions` | List loaded Skills and Tools |
+
+## Example Questions
+
+```text
+Which stocks have the lowest PE ratio?
+Analyze the valuation of the stocks with the lowest PE ratios.
+Analyze the recent closing-price trend and volatility of Kweichow Moutai.
+Query my uploaded CSV dataset.
+Summarize the previous result.
+```
+
 ## Repository Layout
 
 ```text
-backend/        FastAPI backend, database models, NL2SQL workflow, CSV importer
-frontend/       React/Vite frontend
-infra/          Docker Compose services
-data_samples/   Sample CSV files
-docs/           Architecture notes and diagrams
+agent_extensions/   Skill and Tool JSON definitions
+backend/            FastAPI backend, Agent workflow, database models, CSV importer
+frontend/           React/Vite chat frontend
+infra/              Docker Compose services
+data_samples/       Sample CSV files
+docs/               Architecture notes and diagrams
 ```
 
 ## Safety Notes
 
 - Generated SQL is validated as read-only `SELECT`.
 - Multiple SQL statements and write/DDL keywords are blocked.
-- User-uploaded tables are only queryable when their names start with `uploaded_`.
-- This is a demo/research project, not a production-ready financial advisory system.
+- SQL without `LIMIT` is repaired automatically.
+- Uploaded user tables must use the `uploaded_` prefix.
+- This project is a demo/research system and does not provide financial advice.
 
 ---
 
 ## 中文
 
-一个端到端金融数据 NL2SQL 演示项目。系统结合 FastAPI、LangGraph、SQLAlchemy、MySQL、Qdrant、Elasticsearch 和 React/Vite 前端。2.0 版本新增通用 CSV 导入流程：用户可以在浏览器上传任意带表头的 CSV，后端自动创建 MySQL `uploaded_*` 表、导入数据、生成元数据、重建检索索引，然后通过自然语言查询上传数据。
+一个端到端的金融数据 Agent 智能查询与分析系统。项目结合 FastAPI、LangGraph、LangChain、SQLAlchemy、MySQL、Qdrant、Elasticsearch、React、TypeScript 和 Docker Compose。
+
+系统支持多轮自然语言聊天、大模型意图路由、大模型优先 SQL 生成、只读 SQL 安全校验、RAG 元数据召回、CSV 数据接入，以及可配置的 Skill/Tool 金融分析扩展机制。
 
 ## 功能特性
 
-- 基于 LangGraph 的自然语言转 SQL 工作流
-- Qdrant、Elasticsearch、MySQL fallback 混合元数据检索
-- SQL 执行前只读校验和自动修复
-- 内置金融 Demo 表结构和样例数据
-- 浏览器上传 CSV，后端自动建表
-- 自动生成上传表和字段的元数据
-- 配置 `OPENAI_API_KEY` 后可启用 LLM SQL 生成
-- React 查询工作台展示执行步骤、检索上下文、生成 SQL 和结果表格
+- 聊天式金融数据 Agent 前端
+- 基于 `session_id` 的短期多轮记忆
+- 大模型意图路由：`data_query`、`data_analysis`、`general_chat`
+- 大模型优先生成 SQL，规则生成兜底
+- Qdrant、Elasticsearch、MySQL fallback 混合元数据召回
+- 只读 SQL 校验和缺失 `LIMIT` 自动修复
+- 基于 SQL 查询结果生成自然语言分析
+- 通用 CSV 上传、自动建表和索引重建
+- `agent_extensions/` Skill/Tool 扩展系统
+- 内置估值、趋势、风险、数据画像分析工具
 
-## 架构
+## 架构流程
 
 ```text
-前端 CSV 上传 / 自然语言查询
-  -> FastAPI 路由
-  -> CSV 导入器或 NL2SQL 服务
-  -> MetadataCatalog + uploaded_* MySQL 表
-  -> Qdrant / Elasticsearch 元数据索引
-  -> LangGraph NL2SQL 工作流
-  -> 只读 SQL 执行
+React 聊天前端
+  -> FastAPI /api/chat
+  -> 短期对话记忆
+  -> 大模型意图路由
+  -> 元数据召回：Qdrant + Elasticsearch + MySQL fallback
+  -> 大模型优先 SQL 生成
+  -> 只读 SQL 校验和修复
+  -> SQLAlchemy 执行 MySQL 查询
+  -> Skill/Tool 工具分析
+  -> 自然语言回答
 ```
 
-文件级流程图见 [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) 和 [docs/project_file_sequence_hierarchical_v2.svg](docs/project_file_sequence_hierarchical_v2.svg)。
+CSV 接入流程：
+
+```text
+CSV 上传
+  -> 编码识别和表头清洗
+  -> MySQL 字段类型推断
+  -> uploaded_* 动态建表
+  -> 批量写入
+  -> MetadataCatalog 更新
+  -> Qdrant / Elasticsearch 索引重建
+  -> 自然语言查询和 Tool 分析
+```
 
 ## 技术栈
 
-- 后端：FastAPI、SQLAlchemy、LangGraph、LangChain
+- 后端：FastAPI、LangGraph、LangChain、SQLAlchemy
+- 大模型：OpenAI-compatible Chat Completion API
 - 数据库：MySQL
 - 检索：Qdrant、Elasticsearch、MySQL fallback
-- 前端：React、Vite、TypeScript
-- 可选数据源工具：AKShare
+- 前端：React、TypeScript、Vite
+- 基础设施：Docker Compose
+- 可选数据工具：AKShare
+
+## 内置 Skill 和 Tool
+
+Skill 位于 `agent_extensions/skills/`。
+
+| Skill | 用途 |
+| --- | --- |
+| `trend_analysis` | 匹配趋势、走势、收盘价、均线、波动、行情表现类问题 |
+| `valuation_analysis` | 匹配市盈率、估值、ROE、财务指标、排名、最高/最低类问题 |
+| `dataset_profile` | 匹配 CSV、上传数据、字段、分布、缺失值、数据画像类问题 |
+
+Tool 位于 `agent_extensions/tools/`。
+
+| Tool | 用途 |
+| --- | --- |
+| `moving_average_trend` | 计算最新值、区间变化、MA5/MA10 和短期趋势 |
+| `return_risk_summary` | 计算区间收益、波动率、最大回撤、最小值和最大值 |
+| `valuation_snapshot` | 计算估值/财务指标的均值、最低值、最高值和排名摘要 |
+| `dataset_profile` | 统计行数、列数、空值、数值字段范围和示例字段 |
+
+如果只复用已有工具函数，新增 Skill 时只需要在 `agent_extensions/skills/` 添加 JSON 文件并引用已有 tool 名称。如果要新增真正可执行的 Tool，需要在 `backend/app/services/skill_tool_manager.py` 中实现并注册 Python 函数，再在 `agent_extensions/tools/` 添加 JSON 元数据。
 
 ## 环境要求
 
-- Docker Desktop 或带 Docker Compose 的 Docker Engine
+- Docker Desktop 或支持 Docker Compose 的 Docker Engine
 - Python 3.11+
 - Node.js 18+
 
@@ -261,7 +350,7 @@ source .venv/bin/activate
 pip install -r backend/requirements.txt
 ```
 
-4. 创建本地环境配置。
+4. 创建本地环境文件。
 
 ```bash
 cp .env.example .env
@@ -292,7 +381,7 @@ python -c "from app.services.metadata_indexer import MetadataIndexer; print(Meta
 6. 启动后端。
 
 ```bash
-uvicorn app.main:app --app-dir backend --host 0.0.0.0 --port 8000
+uvicorn app.main:app --app-dir backend --host 127.0.0.1 --port 8000
 ```
 
 7. 另开终端启动前端。
@@ -303,40 +392,11 @@ npm install
 npm run dev
 ```
 
-打开 Vite 终端输出的前端访问地址。
-
-## CSV 上传流程
-
-1. 准备一个带表头的 CSV 文件。
-2. 打开前端页面。
-3. 点击左侧侧边栏的 CSV 上传按钮。
-4. 后端会自动完成：
-   - 识别 UTF-8/GBK CSV 编码，
-   - 推断 MySQL 字段类型，
-   - 创建 `uploaded_*` 表，
-   - 插入数据行，
-   - 写入表和字段元数据，
-   - 重建 Qdrant 和 Elasticsearch 索引。
-5. 可以测试：
+打开：
 
 ```text
-query akshare_sample_market close_price
-查询 akshare_sample_market 数据
+http://127.0.0.1:5173
 ```
-
-项目内置样例：[data_samples/akshare_sample_market.csv](data_samples/akshare_sample_market.csv)。
-
-## 可选 AKShare 导入工具
-
-2.0 主流程是浏览器上传 CSV。仓库中也保留了一个命令行辅助工具，可把单只 A 股历史行情导入内置 `daily_market` 表：
-
-```bash
-export PYTHONPATH=./backend
-python backend/app/data_importers/akshare_stock_importer.py --symbol 600519 --name 贵州茅台 --industry 食品饮料 --start-date 20240601 --end-date 20240614
-python -c "from app.services.metadata_indexer import MetadataIndexer; print(MetadataIndexer().rebuild())"
-```
-
-AKShare 文档：<https://akshare.akfamily.xyz/data/stock/stock.html>
 
 ## 配置说明
 
@@ -348,8 +408,18 @@ AKShare 文档：<https://akshare.akfamily.xyz/data/stock/stock.html>
 | `QDRANT_URL` | Qdrant HTTP 地址 |
 | `ELASTICSEARCH_URL` | Elasticsearch 地址 |
 | `CORS_ORIGINS` | 前端来源白名单，多个值用逗号分隔 |
-| `OPENAI_API_KEY` | 可选 OpenAI API Key |
-| `OPENAI_MODEL` | 可选 LLM SQL 生成模型 |
+| `OPENAI_API_KEY` | OpenAI-compatible API Key |
+| `OPENAI_MODEL` | 聊天模型名称 |
+| `OPENAI_BASE_URL` | 可选 OpenAI-compatible Base URL |
+
+智谱等 OpenAI-compatible API 示例：
+
+```env
+OPENAI_MODEL=glm-5.2
+OPENAI_BASE_URL=https://open.bigmodel.cn/api/paas/v4/
+```
+
+不要提交 `.env`。
 
 前端可在 `frontend/.env` 中配置：
 
@@ -357,19 +427,45 @@ AKShare 文档：<https://akshare.akfamily.xyz/data/stock/stock.html>
 VITE_API_BASE_URL=http://localhost:8000
 ```
 
+## API 概览
+
+| 接口 | 说明 |
+| --- | --- |
+| `POST /api/chat/message` | 聊天请求，返回完整 JSON |
+| `POST /api/chat/stream` | 前端使用的 SSE 聊天流 |
+| `DELETE /api/chat/sessions/{session_id}` | 清空短期记忆 |
+| `POST /api/nl2sql/query` | 兼容旧版 NL2SQL JSON 查询 |
+| `POST /api/nl2sql/stream` | 兼容旧版 NL2SQL SSE 查询 |
+| `POST /api/datasets/upload` | 上传 CSV 并重建索引 |
+| `GET /api/metadata/search` | 搜索元数据 |
+| `POST /api/metadata/index` | 重建元数据索引 |
+| `GET /api/extensions` | 查看已加载的 Skill 和 Tool |
+
+## 示例问题
+
+```text
+市盈率最低的股票有哪些？
+分析市盈率最低的股票估值情况
+分析贵州茅台近期收盘价趋势和波动
+查询我上传的 CSV 数据
+总结刚才的查询结果
+```
+
 ## 目录结构
 
 ```text
-backend/        FastAPI 后端、数据库模型、NL2SQL 工作流、CSV 导入器
-frontend/       React/Vite 前端
-infra/          Docker Compose 服务配置
-data_samples/   CSV 样例文件
-docs/           架构说明和流程图
+agent_extensions/   Skill 和 Tool JSON 定义
+backend/            FastAPI 后端、Agent 工作流、数据库模型、CSV 导入器
+frontend/           React/Vite 聊天前端
+infra/              Docker Compose 服务配置
+data_samples/       CSV 示例文件
+docs/               架构说明和流程图
 ```
 
 ## 安全说明
 
 - 生成 SQL 会经过只读 `SELECT` 校验。
 - 禁止多语句、写入语句和 DDL 关键词。
-- 用户上传表只有 `uploaded_` 前缀才允许查询。
-- 本项目是 Demo/研究项目，不构成生产级金融建议系统。
+- 缺失 `LIMIT` 的 SQL 会自动修复。
+- 用户上传表必须使用 `uploaded_` 前缀。
+- 本项目是 Demo/研究项目，不构成金融投资建议。
