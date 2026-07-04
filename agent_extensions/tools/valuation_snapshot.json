@@ -1,0 +1,7 @@
+{
+  "name": "valuation_snapshot",
+  "display_name": "估值快照工具",
+  "description": "对 PE、ROE、净利润、营收等指标结果做最小值、最大值、均值和排名摘要。",
+  "function": "valuation_snapshot",
+  "input_hint": "rows should contain factor_value, metric_value or other financial numeric columns"
+}

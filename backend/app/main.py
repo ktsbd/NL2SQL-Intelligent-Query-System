@@ -2,6 +2,8 @@
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.api.datasets import router as datasets_router
+from app.api.chat import router as chat_router
+from app.api.extensions import router as extensions_router
 from app.api.health import router as health_router
 from app.api.metadata import router as metadata_router
 from app.api.nl2sql import router as nl2sql_router
@@ -24,6 +26,8 @@ app.include_router(health_router, prefix="/api")
 app.include_router(datasets_router, prefix="/api")
 app.include_router(metadata_router, prefix="/api")
 app.include_router(nl2sql_router, prefix="/api")
+app.include_router(chat_router, prefix="/api")
+app.include_router(extensions_router, prefix="/api")
 
 
 @app.get("/")

@@ -1,0 +1,7 @@
+{
+  "name": "dataset_profile",
+  "display_name": "数据画像工具",
+  "description": "统计结果行数、字段数、空值、数值字段范围和示例值，适合上传 CSV 后的快速理解。",
+  "function": "dataset_profile",
+  "input_hint": "rows can come from any query result or uploaded_* table"
+}

@@ -1,0 +1,9 @@
+{
+  "name": "dataset_profile",
+  "display_name": "上传数据画像",
+  "description": "识别 CSV、上传表、字段分布、数据概览等问题，并对查询结果做基础画像。",
+  "routes": ["data_query", "data_analysis"],
+  "keywords": ["csv", "上传", "数据集", "字段", "分布", "概览", "统计", "画像", "缺失", "表"],
+  "tools": ["dataset_profile"],
+  "prompt_hint": "优先解释字段类型、样本规模、数值范围和可继续分析的方向。"
+}

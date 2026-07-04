@@ -1,0 +1,7 @@
+{
+  "name": "return_risk_summary",
+  "display_name": "收益风险工具",
+  "description": "根据时间序列数值计算区间收益、波动率、最大回撤或数值分布范围。",
+  "function": "return_risk_summary",
+  "input_hint": "rows should contain ordered numeric values such as close_price, factor_value or metric_value"
+}

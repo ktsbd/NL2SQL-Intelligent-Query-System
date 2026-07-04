@@ -1,0 +1,7 @@
+{
+  "name": "moving_average_trend",
+  "display_name": "均线趋势工具",
+  "description": "根据 trade_date 与 close_price/open_price/metric_value 等字段计算最近变化、均值和短期趋势。",
+  "function": "moving_average_trend",
+  "input_hint": "rows should contain date-like and numeric price/metric columns"
+}

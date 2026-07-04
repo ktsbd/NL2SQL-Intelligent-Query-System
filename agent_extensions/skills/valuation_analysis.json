@@ -1,0 +1,9 @@
+{
+  "name": "valuation_analysis",
+  "display_name": "估值指标分析",
+  "description": "识别市盈率、估值、ROE、财务指标排名等问题，并调用估值快照工具分析结果。",
+  "routes": ["data_query", "data_analysis"],
+  "keywords": ["市盈率", "估值", "低估", "高估", "pe", "roe", "净利润", "营收", "财务", "排名", "最高", "最低"],
+  "tools": ["valuation_snapshot"],
+  "prompt_hint": "优先解释指标排名、极值、均值和可能的估值含义。"
+}

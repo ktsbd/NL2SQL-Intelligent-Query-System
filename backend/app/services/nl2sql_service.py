@@ -10,7 +10,7 @@ class NL2SQLService:
         if state.get("error"):
             raise ValueError(str(state["error"]))
         return {
-            "question": question,
+            "question": state.get("question", question),
             "intent": state["intent"],
             "sql": state["sql"],
             "steps": state.get("steps", []),

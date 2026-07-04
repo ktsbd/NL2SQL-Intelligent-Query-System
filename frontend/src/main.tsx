@@ -1,6 +1,6 @@
-﻿import React, { useMemo, useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import { createRoot } from 'react-dom/client';
-import { Activity, Database, Loader2, Play, Search, Server, Sparkles, Upload } from 'lucide-react';
+import { Bot, Brain, Database, Loader2, MessageSquare, Send, Trash2, Upload, UserRound } from 'lucide-react';
 import './styles.css';
 
 type ContextItem = {
@@ -11,14 +11,38 @@ type ContextItem = {
   sources: string[];
 };
 
-type QueryResult = {
+type ChatResponse = {
+  session_id: string;
+  route: string;
+  answer: string;
   question: string;
-  intent: string;
-  sql: string;
+  intent?: string;
+  sql?: string;
   steps: string[];
   context: ContextItem[];
   columns: string[];
   rows: Record<string, unknown>[];
+  matched_skills: {
+    name: string;
+    display_name: string;
+    description: string;
+    prompt_hint: string;
+    tools: string[];
+  }[];
+  tool_results: {
+    name: string;
+    display_name: string;
+    description: string;
+    output: Record<string, unknown>;
+  }[];
+  history: { role: string; content: string; created_at: string }[];
+};
+
+type ChatMessage = {
+  id: string;
+  role: 'user' | 'assistant';
+  content: string;
+  route?: string;
 };
 
 type UploadResult = {
@@ -30,38 +54,46 @@ type UploadResult = {
 };
 
 const API_BASE = import.meta.env.VITE_API_BASE_URL ?? 'http://localhost:8000';
-const examples = ['净利润最高的股票', '银行行业ROE最高的公司', '市盈率最低的股票', '宁德时代动力电池装机量', '成交额最高的股票'];
+const SESSION_KEY = 'nl2sql_chat_session_id';
+const examples = ['贵州茅台最近行情如何？', '分析银行行业ROE最高的公司', '市盈率最低的股票有哪些？', '对刚才的查询结果做一个总结', '查询我上传的CSV数据'];
 
 function App() {
-  const [question, setQuestion] = useState(examples[0]);
-  const [limit, setLimit] = useState(5);
-  const [result, setResult] = useState<QueryResult | null>(null);
+  const [sessionId, setSessionId] = useState(() => localStorage.getItem(SESSION_KEY) || '');
+  const [input, setInput] = useState(examples[0]);
+  const [limit, setLimit] = useState(8);
+  const [messages, setMessages] = useState<ChatMessage[]>([
+    {
+      id: 'welcome',
+      role: 'assistant',
+      content: '你好，我可以查询股票行情、财务指标、因子指标，也可以分析查询结果。上传 CSV 后，我也能把新数据纳入自然语言查询。',
+      route: 'general_chat',
+    },
+  ]);
   const [events, setEvents] = useState<string[]>([]);
+  const [latest, setLatest] = useState<ChatResponse | null>(null);
   const [loading, setLoading] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [uploadResult, setUploadResult] = useState<UploadResult | null>(null);
   const [error, setError] = useState('');
 
-  const rowCount = result?.rows.length ?? 0;
-  const contextCount = result?.context.length ?? 0;
-  const hasResult = Boolean(result);
+  const tableRows = useMemo(() => latest?.rows ?? [], [latest]);
 
-  async function runQuery(nextQuestion = question) {
-    const trimmed = nextQuestion.trim();
-    if (!trimmed) return;
-    setQuestion(trimmed);
-    setLoading(true);
+  async function sendMessage(nextInput = input) {
+    const message = nextInput.trim();
+    if (!message || loading) return;
+    setInput('');
     setError('');
-    setEvents(['提交自然语言问题']);
-    setResult(null);
+    setEvents(['submit_message']);
+    setLoading(true);
+    setMessages((current) => [...current, { id: crypto.randomUUID(), role: 'user', content: message }]);
     try {
-      const response = await fetch(`${API_BASE}/api/nl2sql/stream`, {
+      const response = await fetch(`${API_BASE}/api/chat/stream`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ question: trimmed, limit }),
+        body: JSON.stringify({ message, session_id: sessionId || null, limit }),
       });
       if (!response.ok || !response.body) {
-        throw new Error('流式查询启动失败');
+        throw new Error('聊天请求启动失败');
       }
       const reader = response.body.getReader();
       const decoder = new TextDecoder('utf-8');
@@ -77,7 +109,9 @@ function App() {
         }
       }
     } catch (err) {
-      setError(err instanceof Error ? err.message : '查询失败');
+      const messageText = err instanceof Error ? err.message : '聊天失败';
+      setError(messageText);
+      setMessages((current) => [...current, { id: crypto.randomUUID(), role: 'assistant', content: messageText, route: 'error' }]);
     } finally {
       setLoading(false);
     }
@@ -93,23 +127,45 @@ function App() {
       const form = new FormData();
       form.append('file', file);
       form.append('dataset_name', file.name.replace(/\.csv$/i, ''));
-      const response = await fetch(`${API_BASE}/api/datasets/upload`, {
-        method: 'POST',
-        body: form,
-      });
+      const response = await fetch(`${API_BASE}/api/datasets/upload`, { method: 'POST', body: form });
       if (!response.ok) {
         const payload = await response.json().catch(() => null);
         throw new Error(payload?.detail || 'CSV 导入失败');
       }
       const payload = await response.json() as UploadResult;
       setUploadResult(payload);
-      setQuestion(`查询${payload.dataset_name}数据`);
-      setEvents(['CSV 上传', '自动建表', '写入元数据', '重建索引']);
+      setMessages((current) => [
+        ...current,
+        {
+          id: crypto.randomUUID(),
+          role: 'assistant',
+          content: `CSV 已导入：${payload.dataset_name}，写入 ${payload.rows_inserted} 行、${payload.columns.length} 列，并已重建检索索引。`,
+          route: 'dataset_upload',
+        },
+      ]);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'CSV 导入失败');
     } finally {
       setUploading(false);
     }
+  }
+
+  async function clearMemory() {
+    if (sessionId) {
+      await fetch(`${API_BASE}/api/chat/sessions/${sessionId}`, { method: 'DELETE' }).catch(() => null);
+    }
+    localStorage.removeItem(SESSION_KEY);
+    setSessionId('');
+    setLatest(null);
+    setEvents([]);
+    setMessages([
+      {
+        id: 'welcome-reset',
+        role: 'assistant',
+        content: '短期记忆已清空。你可以重新开始提问。',
+        route: 'general_chat',
+      },
+    ]);
   }
 
   function handleSseChunk(chunk: string) {
@@ -122,37 +178,42 @@ function App() {
       setEvents((current) => [...current, payload.name]);
     }
     if (eventName === 'result') {
-      setResult(payload as QueryResult);
-      setEvents((current) => payload.steps?.length ? payload.steps : current);
+      const result = payload as ChatResponse;
+      setLatest(result);
+      setSessionId(result.session_id);
+      localStorage.setItem(SESSION_KEY, result.session_id);
+      setMessages((current) => [
+        ...current,
+        { id: crypto.randomUUID(), role: 'assistant', content: result.answer, route: result.route },
+      ]);
+      setEvents(result.steps?.length ? ['route_intent', ...result.steps, 'answer'] : ['route_intent', 'answer']);
     }
     if (eventName === 'error') {
-      setError(payload.message || '查询失败');
+      setError(payload.message || '聊天失败');
     }
   }
-
-  const tableRows = useMemo(() => result?.rows ?? [], [result]);
 
   return (
     <main className="app-shell">
       <aside className="sidebar">
         <div className="brand-row">
-          <div className="brand-mark"><Sparkles size={18} /></div>
+          <div className="brand-mark"><Bot size={19} /></div>
           <div>
-            <h1>NL2SQL</h1>
-            <p>金融数据智能查询系统</p>
+            <h1>NL2SQL Agent</h1>
+            <p>金融数据聊天分析系统</p>
           </div>
         </div>
 
         <section className="status-panel">
-          <div className="status-item"><Server size={16} /><span>FastAPI</span><strong>8000</strong></div>
-          <div className="status-item"><Database size={16} /><span>MySQL / Qdrant / ES</span><strong>在线</strong></div>
-          <div className="status-item"><Activity size={16} /><span>LangGraph Workflow</span><strong>{events.length || 0}</strong></div>
+          <div className="status-item"><Brain size={16} /><span>短期记忆</span><strong>{sessionId ? '已开启' : '新会话'}</strong></div>
+          <div className="status-item"><Database size={16} /><span>SQL / RAG</span><strong>{latest?.route || '待路由'}</strong></div>
+          <button className="clear-button" type="button" onClick={clearMemory}><Trash2 size={16} />清空记忆</button>
         </section>
 
         <section className="examples">
           <h2>示例问题</h2>
           {examples.map((item) => (
-            <button key={item} type="button" onClick={() => runQuery(item)} disabled={loading}>
+            <button key={item} type="button" onClick={() => sendMessage(item)} disabled={loading}>
               {item}
             </button>
           ))}
@@ -170,104 +231,127 @@ function App() {
               <strong>{uploadResult.dataset_name}</strong>
               <span>{uploadResult.table_name}</span>
               <small>{uploadResult.rows_inserted} 行 · {uploadResult.columns.length} 列</small>
-              <button type="button" onClick={() => runQuery(`查询${uploadResult.dataset_name}数据`)} disabled={loading}>
-                查询这份数据
-              </button>
             </div>
           )}
         </section>
       </aside>
 
-      <section className="workspace">
-        <div className="query-bar">
-          <Search size={20} />
-          <textarea value={question} onChange={(event) => setQuestion(event.target.value)} rows={2} />
-          <label className="limit-control">
-            <span>返回</span>
-            <input type="number" min={1} max={50} value={limit} onChange={(event) => setLimit(Number(event.target.value))} />
-          </label>
-          <button className="run-button" type="button" onClick={() => runQuery()} disabled={loading}>
-            {loading ? <Loader2 className="spin" size={18} /> : <Play size={18} />}
-            查询
-          </button>
-        </div>
+      <section className="chat-workspace">
+        <section className="chat-panel">
+          <header className="chat-header">
+            <div>
+              <h2>多轮数据对话</h2>
+              <span>{events.length ? events.join(' / ') : '等待输入'}</span>
+            </div>
+            <label className="limit-control">
+              <span>返回行数</span>
+              <input type="number" min={1} max={50} value={limit} onChange={(event) => setLimit(Number(event.target.value))} />
+            </label>
+          </header>
 
-        {error && <div className="error-strip">{error}</div>}
+          {error && <div className="error-strip">{error}</div>}
 
-        <div className="metric-grid">
-          <Metric label="查询意图" value={result?.intent || '等待查询'} />
-          <Metric label="检索上下文" value={`${contextCount} 条`} />
-          <Metric label="结果行数" value={`${rowCount} 行`} />
-        </div>
-
-        <div className="content-grid">
-          <section className="panel steps-panel">
-            <h2>执行流程</h2>
-            <div className="step-list">
-              {(events.length ? events : ['parse_intent', 'retrieve_context', 'generate_sql', 'validate_sql', 'execute_sql']).map((step, index) => (
-                <div className={`step ${hasResult || index < events.length ? 'done' : ''}`} key={`${step}-${index}`}>
-                  <span>{index + 1}</span>
-                  <strong>{step}</strong>
+          <div className="message-list">
+            {messages.map((message) => (
+              <article className={`message ${message.role}`} key={message.id}>
+                <div className="avatar">{message.role === 'user' ? <UserRound size={17} /> : <Bot size={17} />}</div>
+                <div className="bubble">
+                  {message.route && <span className="route-label">{message.route}</span>}
+                  <p>{message.content}</p>
                 </div>
+              </article>
+            ))}
+            {loading && (
+              <article className="message assistant">
+                <div className="avatar"><Bot size={17} /></div>
+                <div className="bubble loading-bubble"><Loader2 className="spin" size={16} />思考中</div>
+              </article>
+            )}
+          </div>
+
+          <form className="composer" onSubmit={(event) => { event.preventDefault(); sendMessage(); }}>
+            <MessageSquare size={20} />
+            <textarea value={input} onChange={(event) => setInput(event.target.value)} rows={2} />
+            <button type="submit" disabled={loading || !input.trim()}>
+              {loading ? <Loader2 className="spin" size={18} /> : <Send size={18} />}
+            </button>
+          </form>
+        </section>
+
+        <aside className="inspector">
+          <section className="panel">
+            <h2>执行详情</h2>
+            <div className="detail-grid">
+              <span>路由</span><strong>{latest?.route || '-'}</strong>
+              <span>意图</span><strong>{latest?.intent || '-'}</strong>
+              <span>记忆</span><strong>{latest?.history?.length ?? messages.length} 条</strong>
+              <span>工具</span><strong>{latest?.tool_results?.length ?? 0} 个</strong>
+            </div>
+          </section>
+
+          <section className="panel skill-panel">
+            <h2>Skill / Tool</h2>
+            <div className="skill-list">
+              {(latest?.matched_skills ?? []).map((skill) => (
+                <article key={skill.name}>
+                  <strong>{skill.display_name}</strong>
+                  <p>{skill.description}</p>
+                  <small>{skill.tools.join(' / ')}</small>
+                </article>
               ))}
+              {(latest?.tool_results ?? []).map((tool) => (
+                <article key={tool.name} className="tool-card">
+                  <strong>{tool.display_name}</strong>
+                  <p>{String(tool.output?.summary ?? tool.description)}</p>
+                </article>
+              ))}
+              {!latest?.matched_skills?.length && !latest?.tool_results?.length && <p className="empty-text">暂无匹配 skill/tool。</p>}
             </div>
           </section>
 
           <section className="panel sql-panel">
             <h2>生成 SQL</h2>
-            <pre>{result?.sql || '查询后展示生成的 SELECT 语句'}</pre>
+            <pre>{latest?.sql || '无需 SQL 或尚未生成'}</pre>
           </section>
-        </div>
 
-        <section className="panel context-panel">
-          <h2>检索上下文</h2>
-          <div className="context-list">
-            {(result?.context ?? []).map((item) => (
-              <article key={`${item.object_name}-${item.rank_score}`}>
-                <div>
+          <section className="panel context-panel">
+            <h2>召回上下文</h2>
+            <div className="context-list">
+              {(latest?.context ?? []).map((item) => (
+                <article key={`${item.object_name}-${item.rank_score}`}>
                   <strong>{item.business_name}</strong>
                   <span>{item.object_name}</span>
-                </div>
-                <p>{item.description}</p>
-                <small>{item.sources.join(' + ')} · {item.rank_score.toFixed(3)}</small>
-              </article>
-            ))}
-            {!result && <p className="empty-text">这里会展示 Qdrant、Elasticsearch 与 MySQL 合并后的元数据召回结果。</p>}
-          </div>
-        </section>
-
-        <section className="panel result-panel">
-          <h2>查询结果</h2>
-          {result && tableRows.length > 0 ? (
-            <div className="table-wrap">
-              <table>
-                <thead>
-                  <tr>{result.columns.map((column) => <th key={column}>{column}</th>)}</tr>
-                </thead>
-                <tbody>
-                  {tableRows.map((row, rowIndex) => (
-                    <tr key={rowIndex}>
-                      {result.columns.map((column) => <td key={column}>{String(row[column] ?? '')}</td>)}
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+                  <p>{item.description}</p>
+                </article>
+              ))}
+              {!latest?.context?.length && <p className="empty-text">暂无召回上下文。</p>}
             </div>
-          ) : (
-            <p className="empty-text">暂无结果。</p>
-          )}
-        </section>
+          </section>
+
+          <section className="panel result-panel">
+            <h2>查询结果</h2>
+            {latest && tableRows.length > 0 ? (
+              <div className="table-wrap">
+                <table>
+                  <thead>
+                    <tr>{latest.columns.map((column) => <th key={column}>{column}</th>)}</tr>
+                  </thead>
+                  <tbody>
+                    {tableRows.map((row, rowIndex) => (
+                      <tr key={rowIndex}>
+                        {latest.columns.map((column) => <td key={column}>{String(row[column] ?? '')}</td>)}
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            ) : (
+              <p className="empty-text">暂无结果。</p>
+            )}
+          </section>
+        </aside>
       </section>
     </main>
-  );
-}
-
-function Metric({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="metric">
-      <span>{label}</span>
-      <strong>{value}</strong>
-    </div>
   );
 }
 
@@ -276,4 +360,3 @@ createRoot(document.getElementById('root')!).render(
     <App />
   </React.StrictMode>,
 );
-

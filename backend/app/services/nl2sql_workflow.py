@@ -6,6 +6,7 @@ from app.services.llm_sql_generator import LLMSQLGenerator
 from app.services.metadata_retriever import MetadataRetriever
 from app.services.nl2sql_generator import NL2SQLGenerator
 from app.services.sql_executor import SQLExecutor
+from app.services.intent_router import LLMIntentRouter
 
 
 class NL2SQLState(TypedDict, total=False):
@@ -27,6 +28,7 @@ class NL2SQLWorkflow:
         self.retriever = MetadataRetriever()
         self.rule_generator = NL2SQLGenerator()
         self.llm_generator = LLMSQLGenerator()
+        self.router = LLMIntentRouter()
         self.executor = SQLExecutor()
         self.graph = self._build_graph()
 
@@ -63,24 +65,38 @@ class NL2SQLWorkflow:
         return graph.compile()
 
     def _parse_intent(self, state: NL2SQLState) -> NL2SQLState:
-        intent, sql, params = self.rule_generator.generate(state["question"], limit=state["limit"])
-        return {**state, "intent": intent, "sql": sql, "params": params, "steps": [*state.get("steps", []), "parse_intent"]}
+        decision = self.router.route(state["question"], history=[])
+        question = decision.rewritten_question or state["question"]
+        return {
+            **state,
+            "question": question,
+            "intent": decision.route,
+            "steps": [*state.get("steps", []), f"route_intent:{decision.route}"],
+        }
 
     def _retrieve_context(self, state: NL2SQLState) -> NL2SQLState:
         context = self.retriever.search(state["question"], limit=8)
         return {**state, "context": context, "steps": [*state.get("steps", []), "retrieve_context"]}
 
     def _generate_sql(self, state: NL2SQLState) -> NL2SQLState:
-        uploaded = self.rule_generator.generate_uploaded(state["question"], state.get("context", []), state["limit"])
-        if uploaded:
-            intent, sql, params = uploaded
-            return {**state, "intent": intent, "sql": sql, "params": params, "steps": [*state.get("steps", []), "generate_sql:uploaded"]}
-
         generated = self.llm_generator.generate(state["question"], state.get("context", []), state["limit"])
         if generated:
             intent, sql, params = generated
             return {**state, "intent": intent, "sql": sql, "params": params, "steps": [*state.get("steps", []), "generate_sql:llm"]}
-        return {**state, "steps": [*state.get("steps", []), "generate_sql:rules"]}
+
+        uploaded = self.rule_generator.generate_uploaded(state["question"], state.get("context", []), state["limit"])
+        if uploaded:
+            intent, sql, params = uploaded
+            return {**state, "intent": intent, "sql": sql, "params": params, "steps": [*state.get("steps", []), "generate_sql:rules_uploaded"]}
+
+        intent, sql, params = self.rule_generator.generate(state["question"], limit=state["limit"])
+        return {
+            **state,
+            "intent": intent,
+            "sql": sql,
+            "params": params,
+            "steps": [*state.get("steps", []), "generate_sql:rules_fallback"],
+        }
 
     def _validate_sql(self, state: NL2SQLState) -> NL2SQLState:
         try:

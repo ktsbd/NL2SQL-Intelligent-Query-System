@@ -1,0 +1,9 @@
+{
+  "name": "trend_analysis",
+  "display_name": "行情趋势分析",
+  "description": "识别走势、均线、涨跌、行情表现等问题，并调用趋势和风险工具分析查询结果。",
+  "routes": ["data_query", "data_analysis"],
+  "keywords": ["趋势", "走势", "行情", "收盘", "价格", "涨跌", "均线", "波动", "近期", "表现"],
+  "tools": ["moving_average_trend", "return_risk_summary"],
+  "prompt_hint": "优先解释价格趋势、最近变化、均线位置和波动风险。"
+}
