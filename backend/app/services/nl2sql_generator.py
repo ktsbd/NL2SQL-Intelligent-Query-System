@@ -56,6 +56,8 @@ class NL2SQLGenerator:
         return self._stock_sql(question, limit)
 
     def generate_uploaded(self, question: str, context: list[dict[str, object]], limit: int) -> tuple[str, str, dict[str, object]] | None:
+        if not self._should_use_uploaded_dataset(question, context):
+            return None
         table_name = self._pick_uploaded_table(context)
         if not table_name:
             return None
@@ -77,6 +79,17 @@ FROM `{table_name}`{order_sql}
 LIMIT :limit
 """.strip()
         return f"uploaded_dataset:{table_name}", sql, {"limit": limit}
+
+    def _should_use_uploaded_dataset(self, question: str, context: list[dict[str, object]]) -> bool:
+        uploaded_keywords = ["上传", "csv", "CSV", "我的数据", "导入", "数据集", "uploaded"]
+        if self._contains_any(question, uploaded_keywords):
+            return True
+        if not context:
+            return False
+        top = context[0]
+        object_name = str(top.get("object_name", ""))
+        object_type = str(top.get("object_type", ""))
+        return object_name.startswith("uploaded_") and object_type == "uploaded_table" and float(top.get("rank_score", 0.0)) >= 1.2
 
     def _financial_sql(self, question: str, normalized: str, limit: int) -> tuple[str, str, dict[str, object]]:
         metric = "net_profit"

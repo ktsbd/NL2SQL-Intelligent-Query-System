@@ -16,10 +16,38 @@ class MetadataRetriever:
         self.elasticsearch = Elasticsearch(settings.elasticsearch_url, request_timeout=5)
 
     def search(self, query: str, limit: int = 5) -> list[dict[str, object]]:
+        results, _ = self.search_with_diagnostics(query, limit)
+        return results
+
+    def search_with_diagnostics(self, query: str, limit: int = 5) -> tuple[list[dict[str, object]], dict[str, object]]:
+        all_hits: list[tuple[float, list[dict[str, object]]]] = []
+        variants = [query]
+        rounds = 1
+
+        first_hits = self._search_round(query, limit)
+        all_hits.extend(first_hits)
+        merged = self._merge(query, all_hits, limit)
+
+        if self._needs_second_round(merged, limit):
+            variants.extend(self._query_variants(query))
+            rounds = len(variants)
+            for variant in variants[1:]:
+                all_hits.extend(self._search_round(variant, limit))
+            merged = self._merge(query, all_hits, limit)
+
+        diagnostics = {
+            "rounds": rounds,
+            "variants": variants,
+            "top_score": float(merged[0].get("rank_score", 0.0)) if merged else 0.0,
+            "returned": len(merged),
+        }
+        return merged, diagnostics
+
+    def _search_round(self, query: str, limit: int) -> list[tuple[float, list[dict[str, object]]]]:
         vector_hits = self._safe_search(self._search_qdrant, query, limit)
         keyword_hits = self._safe_search(self._search_elasticsearch, query, limit)
         db_hits = self._search_database(query, limit)
-        return self._merge(query, vector_hits, keyword_hits, db_hits, limit)
+        return [(0.50, vector_hits), (0.40, keyword_hits), (0.25, db_hits)]
 
     def _safe_search(self, search_fn, query: str, limit: int) -> list[dict[str, object]]:
         try:
@@ -85,9 +113,9 @@ class MetadataRetriever:
         scored.sort(key=lambda item: float(item["score"]), reverse=True)
         return scored[:limit]
 
-    def _merge(self, query: str, vector_hits, keyword_hits, db_hits, limit: int) -> list[dict[str, object]]:
+    def _merge(self, query: str, weighted_hits: list[tuple[float, list[dict[str, object]]]], limit: int) -> list[dict[str, object]]:
         merged: dict[int, dict[str, object]] = {}
-        for weight, hits in ((0.50, vector_hits), (0.40, keyword_hits), (0.25, db_hits)):
+        for weight, hits in weighted_hits:
             for rank, hit in enumerate(hits):
                 item_id = int(hit["id"])
                 score = (
@@ -104,6 +132,30 @@ class MetadataRetriever:
                     merged[item_id]["sources"] = sorted(sources)
 
         return sorted(merged.values(), key=lambda item: float(item["rank_score"]), reverse=True)[:limit]
+
+    def _needs_second_round(self, merged: list[dict[str, object]], limit: int) -> bool:
+        if len(merged) < min(3, limit):
+            return True
+        return float(merged[0].get("rank_score", 0.0)) < 0.7
+
+    def _query_variants(self, query: str) -> list[str]:
+        expansions = {
+            "行情": "日行情 收盘价 开盘价 成交量 成交额 daily_market",
+            "价格": "收盘价 开盘价 最高价 最低价 daily_market",
+            "财务": "财务报表 净利润 营收 ROE financial_statements",
+            "利润": "净利润 财务报表 financial_statements",
+            "收入": "营收 revenue financial_statements",
+            "估值": "市盈率 pe_ttm 因子 factor_values",
+            "市盈率": "PE pe_ttm 估值 因子 factor_values",
+            "趋势": "行情 收盘价 动量 momentum_20d factor_values",
+            "上传": "CSV uploaded_table uploaded_column 用户上传数据",
+            "CSV": "uploaded_table uploaded_column 用户上传数据",
+        }
+        variants = []
+        for keyword, expansion in expansions.items():
+            if keyword.lower() in query.lower():
+                variants.append(f"{query} {expansion}")
+        return variants[:2]
 
     def _lexical_bonus(self, text: str, query: str) -> float:
         if not query:

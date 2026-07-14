@@ -18,3 +18,7 @@ dist/
 data_uploads/
 uploads/
 *.sqlite3
+versions/
+tmp/
+github_url.txt
+interview_review_assets/

@@ -4,6 +4,7 @@ from pydantic import BaseModel, Field
 class NL2SQLRequest(BaseModel):
     question: str = Field(..., min_length=1)
     limit: int = Field(default=10, ge=1, le=50)
+    confirmed: bool = False
 
 
 class RetrievedContext(BaseModel):
@@ -22,3 +23,6 @@ class NL2SQLResponse(BaseModel):
     context: list[RetrievedContext]
     columns: list[str]
     rows: list[dict[str, object]]
+    requires_confirmation: bool = False
+    confirmation_reason: str | None = None
+    retrieval_diagnostics: dict[str, object] = Field(default_factory=dict)

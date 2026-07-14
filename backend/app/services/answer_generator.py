@@ -67,6 +67,50 @@ class AnswerGenerator:
                 return self._fallback_answer(route, question, sql, rows, tool_results)
         return self._fallback_answer(route, question, sql, rows, tool_results)
 
+    def answer_plan(
+        self,
+        *,
+        question: str,
+        history: list[dict[str, str]],
+        plan_results: list[dict[str, Any]],
+    ) -> str:
+        if self.enabled:
+            try:
+                prompt = ChatPromptTemplate.from_messages(
+                    [
+                        (
+                            "system",
+                            "你是金融数据 Agent 的中文分析助手。你会收到一个多步骤分析计划的执行结果。"
+                            "必须基于 SQL 查询结果和工具结果回答，不要编造数据。"
+                            "回答结构：先给总论，再按行情/估值/财务/风险等维度列证据，最后给风险提示。"
+                            "这不是投资建议，不要给确定性买卖建议。",
+                        ),
+                        (
+                            "human",
+                            "用户问题：{question}\n短期历史：\n{history}\n多步骤执行结果 JSON：\n{plan_results}\n请输出综合分析。",
+                        ),
+                    ]
+                )
+                response = (
+                    prompt
+                    | ChatOpenAI(
+                        model=settings.openai_model,
+                        api_key=settings.openai_api_key,
+                        base_url=settings.openai_base_url or None,
+                        temperature=0.2,
+                    )
+                ).invoke(
+                    {
+                        "question": question,
+                        "history": self._format_history(history),
+                        "plan_results": json.dumps(plan_results, ensure_ascii=False, default=self._json_default, indent=2),
+                    }
+                )
+                return str(response.content).strip()
+            except Exception:
+                pass
+        return self._fallback_plan_answer(question, plan_results)
+
     def general_chat(self, message: str, history: list[dict[str, str]]) -> str:
         if self.enabled:
             try:
@@ -112,6 +156,23 @@ class AnswerGenerator:
         if route == "data_analysis":
             return f"已基于查询结果做初步分析：本次返回 {len(rows)} 行数据。{tool_summary}前几条关键记录为 {self._format_rows(first_rows)}。"
         return f"查询完成，共返回 {len(rows)} 行数据。{tool_summary}前几条结果：{self._format_rows(first_rows)}"
+
+    def _fallback_plan_answer(self, question: str, plan_results: list[dict[str, Any]]) -> str:
+        parts = [f"已按多步骤计划分析：{question}"]
+        for item in plan_results:
+            rows = item.get("rows") or []
+            tool_results = item.get("tool_results") or []
+            summaries = []
+            for tool in tool_results:
+                output = tool.get("output") if isinstance(tool, dict) else {}
+                if isinstance(output, dict) and output.get("summary"):
+                    summaries.append(str(output["summary"]))
+            parts.append(
+                f"{item.get('name', 'task')}：返回 {len(rows)} 行；"
+                + ("；".join(summaries[:2]) if summaries else "暂无工具摘要")
+            )
+        parts.append("以上仅基于当前数据库查询结果，不构成投资建议。")
+        return "\n".join(parts)
 
     def _format_history(self, history: list[dict[str, str]]) -> str:
         return "\n".join(

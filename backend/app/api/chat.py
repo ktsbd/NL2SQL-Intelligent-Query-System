@@ -14,7 +14,7 @@ router = APIRouter(prefix="/chat", tags=["chat"])
 @router.post("/message", response_model=ChatResponse)
 def chat_message(request: ChatRequest) -> dict[str, object]:
     try:
-        return ChatService().chat(request.message, session_id=request.session_id, limit=request.limit)
+        return ChatService().chat(request.message, session_id=request.session_id, limit=request.limit, confirmed=request.confirmed)
     except (SQLValidationError, ValueError) as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
@@ -25,7 +25,7 @@ def stream_chat(request: ChatRequest) -> StreamingResponse:
         try:
             yield _sse("step", {"name": "route_intent", "message": "识别聊天意图"})
             yield _sse("step", {"name": "memory", "message": "读取短期记忆"})
-            result = ChatService().chat(request.message, session_id=request.session_id, limit=request.limit)
+            result = ChatService().chat(request.message, session_id=request.session_id, limit=request.limit, confirmed=request.confirmed)
             if result.get("sql"):
                 yield _sse("step", {"name": "nl2sql", "message": "生成并执行 SQL"})
                 yield _sse("sql", {"sql": result["sql"], "intent": result.get("intent")})

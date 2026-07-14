@@ -1,376 +1,355 @@
-# Financial Data Agent Query System
+# Financial Data Agent Query and Analysis System
 
-English | [中文](#中文)
+[中文说明](#中文说明) | [English](#english)
 
-An end-to-end financial data Agent system for natural-language data query and analysis. The project combines FastAPI, LangGraph, LangChain, SQLAlchemy, MySQL, Qdrant, Elasticsearch, React, TypeScript, and Docker Compose.
+An engineering-oriented financial data Agent system for natural-language querying, NL2SQL generation, multi-step analysis, CSV ingestion, tool-based analytics, observability, and automated evaluation.
 
-The system supports multi-turn chat, LLM-based intent routing, LLM-first NL2SQL generation, read-only SQL validation, RAG metadata retrieval, CSV ingestion, and a configurable Skill/Tool extension layer for financial analysis.
+The project is built with FastAPI, LangGraph, LangChain, SQLAlchemy, MySQL, Qdrant, Elasticsearch, React, TypeScript, and Docker Compose. It is designed to demonstrate a complete backend Agent application rather than a simple prompt demo.
 
-## Features
+## 中文说明
 
-- Chat-style financial data Agent UI
-- Multi-turn short-term memory based on `session_id`
-- LLM intent routing: `data_query`, `data_analysis`, `general_chat`
-- LLM-first SQL generation with rule-based fallback
-- Hybrid metadata retrieval with Qdrant, Elasticsearch, and MySQL fallback
-- Read-only SQL validation and automatic `LIMIT` repair
-- Natural-language analysis based on SQL results
-- General CSV upload with automatic table creation and metadata indexing
-- Skill/Tool extension system under `agent_extensions/`
-- Default tools for valuation, trend, risk, and dataset profiling
+### 项目简介
 
-## Architecture
+本项目是一个金融数据 Agent 智能查询与分析系统。用户可以通过聊天界面输入自然语言问题，系统会自动判断问题意图，检索金融元数据，生成并校验 SQL，执行查询，并结合工具分析结果返回自然语言回答。
 
-```text
-React chat frontend
-  -> FastAPI /api/chat
-  -> short-term chat memory
-  -> LLM intent router
-  -> metadata retrieval: Qdrant + Elasticsearch + MySQL fallback
-  -> LLM-first SQL generation
-  -> read-only SQL validation and repair
-  -> SQLAlchemy execution on MySQL
-  -> Skill/Tool result analysis
-  -> natural-language answer
-```
+系统支持股票基础数据、行情数据、财务指标、因子指标、业务指标以及用户上传的 CSV 数据。对于复杂分析类问题，系统会先拆解任务，再分别执行行情、估值、财务、风险、业务或数据集分析，最后合并成结构化回答。
 
-CSV ingestion flow:
+### 核心能力
 
-```text
-CSV upload
-  -> encoding detection and header cleanup
-  -> MySQL type inference
-  -> uploaded_* table creation
-  -> batch insert
-  -> MetadataCatalog update
-  -> Qdrant / Elasticsearch index rebuild
-  -> natural-language query and Tool analysis
-```
+- 聊天式金融数据查询与分析页面。
+- 基于大模型的意图路由，规则路由作为兜底。
+- 多轮对话问题改写，支持结合历史上下文理解追问。
+- 大模型优先生成 SQL，规则 SQL 生成作为兜底机制。
+- 基于 LangGraph 编排意图解析、元数据检索、SQL 生成、SQL 校验、SQL 修复和 SQL 执行。
+- 融合 Qdrant、Elasticsearch 和 MySQL fallback 的金融元数据混合检索。
+- 支持多步 Planner，将复杂分析问题拆成行情、估值、财务、风险、业务、数据集等子任务。
+- 子任务查询结果为空时支持 Replan 重试。
+- 支持 Skill/Tool 扩展机制，可挂载金融分析工具。
+- 支持上传任意带表头 CSV，自动识别编码、清洗字段名、推断字段类型、创建 uploaded_* 表并写入元数据索引。
+- SQL 只读安全校验，限制危险关键字、多语句、系统库访问、超大 LIMIT 等风险。
+- 对高风险查询、上传表访问、复杂 SQL 等场景支持 Human-in-the-loop 人工确认。
+- 支持会话持久化和短期记忆。
+- 支持 Trace 日志，记录请求、节点、模型调用、工具调用和异常信息。
+- 支持自动化评测 NL2SQL 与 Planner 效果。
+- 支持后台任务系统，用于异步执行评测等长任务。
 
-## Tech Stack
-
-- Backend: FastAPI, LangGraph, LangChain, SQLAlchemy
-- LLM: OpenAI-compatible chat completion API
-- Database: MySQL
-- Retrieval: Qdrant, Elasticsearch, MySQL fallback
-- Frontend: React, TypeScript, Vite
-- Infrastructure: Docker Compose
-- Optional data helper: AKShare
-
-## Built-in Skills and Tools
-
-Skills are configured in `agent_extensions/skills/`.
-
-| Skill | Purpose |
-| --- | --- |
-| `trend_analysis` | Matches trend, price, moving average, volatility, and market-performance questions |
-| `valuation_analysis` | Matches PE, valuation, ROE, financial metric, ranking, highest/lowest questions |
-| `dataset_profile` | Matches CSV, uploaded dataset, fields, distribution, missing-value, and profiling questions |
-
-Tools are configured in `agent_extensions/tools/`.
-
-| Tool | Purpose |
-| --- | --- |
-| `moving_average_trend` | Computes latest value, interval change, MA5/MA10, and short-term trend |
-| `return_risk_summary` | Computes interval return, volatility, maximum drawdown, min, and max |
-| `valuation_snapshot` | Computes average, min, max, and ranking summary for valuation/financial metrics |
-| `dataset_profile` | Computes row count, column count, missing values, numeric ranges, and sample fields |
-
-To add a new configuration-only skill, add a JSON file under `agent_extensions/skills/` and reference existing tool names. To add a new executable tool, implement and register a Python function in `backend/app/services/skill_tool_manager.py`, then add its JSON metadata under `agent_extensions/tools/`.
-
-## Prerequisites
-
-- Docker Desktop or Docker Engine with Docker Compose
-- Python 3.11+
-- Node.js 18+
-
-## Quick Start
-
-1. Start infrastructure services.
-
-```bash
-docker compose -f infra/docker-compose.yml up -d
-```
-
-2. Create and activate a Python virtual environment.
-
-Windows PowerShell:
-
-```powershell
-python -m venv .venv
-.\.venv\Scripts\Activate.ps1
-```
-
-macOS/Linux:
-
-```bash
-python -m venv .venv
-source .venv/bin/activate
-```
-
-3. Install backend dependencies.
-
-```bash
-pip install -r backend/requirements.txt
-```
-
-4. Create a local environment file.
-
-```bash
-cp .env.example .env
-```
-
-Windows PowerShell:
-
-```powershell
-Copy-Item .env.example .env
-```
-
-5. Initialize demo data and metadata indexes.
-
-```bash
-export PYTHONPATH=./backend
-python backend/app/db/init_db.py
-python -c "from app.services.metadata_indexer import MetadataIndexer; print(MetadataIndexer().rebuild())"
-```
-
-Windows PowerShell:
-
-```powershell
-$env:PYTHONPATH="$PWD\backend"
-python backend\app\db\init_db.py
-python -c "from app.services.metadata_indexer import MetadataIndexer; print(MetadataIndexer().rebuild())"
-```
-
-6. Start the backend.
-
-```bash
-uvicorn app.main:app --app-dir backend --host 127.0.0.1 --port 8000
-```
-
-7. Start the frontend in another terminal.
-
-```bash
-cd frontend
-npm install
-npm run dev
-```
-
-Open:
+### 架构流程
 
 ```text
-http://127.0.0.1:5173
-```
-
-## Configuration
-
-Backend configuration is read from `.env`.
-
-| Variable | Description |
-| --- | --- |
-| `MYSQL_HOST`, `MYSQL_PORT`, `MYSQL_USER`, `MYSQL_PASSWORD`, `MYSQL_DATABASE` | MySQL connection settings |
-| `QDRANT_URL` | Qdrant HTTP endpoint |
-| `ELASTICSEARCH_URL` | Elasticsearch endpoint |
-| `CORS_ORIGINS` | Comma-separated frontend origins |
-| `OPENAI_API_KEY` | OpenAI-compatible API key |
-| `OPENAI_MODEL` | Chat model name |
-| `OPENAI_BASE_URL` | Optional OpenAI-compatible base URL |
-
-Example for Zhipu/OpenAI-compatible API:
-
-```env
-OPENAI_MODEL=glm-5.2
-OPENAI_BASE_URL=https://open.bigmodel.cn/api/paas/v4/
-```
-
-Do not commit `.env`.
-
-Frontend configuration can be set in `frontend/.env`:
-
-```text
-VITE_API_BASE_URL=http://localhost:8000
-```
-
-## API Overview
-
-| Endpoint | Description |
-| --- | --- |
-| `POST /api/chat/message` | Chat request with full JSON response |
-| `POST /api/chat/stream` | SSE chat stream for frontend |
-| `DELETE /api/chat/sessions/{session_id}` | Clear short-term memory |
-| `POST /api/nl2sql/query` | Compatibility NL2SQL JSON query |
-| `POST /api/nl2sql/stream` | Compatibility NL2SQL SSE query |
-| `POST /api/datasets/upload` | Upload CSV and rebuild indexes |
-| `GET /api/metadata/search` | Search metadata |
-| `POST /api/metadata/index` | Rebuild metadata indexes |
-| `GET /api/extensions` | List loaded Skills and Tools |
-
-## Example Questions
-
-```text
-Which stocks have the lowest PE ratio?
-Analyze the valuation of the stocks with the lowest PE ratios.
-Analyze the recent closing-price trend and volatility of Kweichow Moutai.
-Query my uploaded CSV dataset.
-Summarize the previous result.
-```
-
-## Repository Layout
-
-```text
-agent_extensions/   Skill and Tool JSON definitions
-backend/            FastAPI backend, Agent workflow, database models, CSV importer
-frontend/           React/Vite chat frontend
-infra/              Docker Compose services
-data_samples/       Sample CSV files
-docs/               Architecture notes and diagrams
-```
-
-## Safety Notes
-
-- Generated SQL is validated as read-only `SELECT`.
-- Multiple SQL statements and write/DDL keywords are blocked.
-- SQL without `LIMIT` is repaired automatically.
-- Uploaded user tables must use the `uploaded_` prefix.
-- This project is a demo/research system and does not provide financial advice.
-
----
-
-## 中文
-
-一个端到端的金融数据 Agent 智能查询与分析系统。项目结合 FastAPI、LangGraph、LangChain、SQLAlchemy、MySQL、Qdrant、Elasticsearch、React、TypeScript 和 Docker Compose。
-
-系统支持多轮自然语言聊天、大模型意图路由、大模型优先 SQL 生成、只读 SQL 安全校验、RAG 元数据召回、CSV 数据接入，以及可配置的 Skill/Tool 金融分析扩展机制。
-
-## 功能特性
-
-- 聊天式金融数据 Agent 前端
-- 基于 `session_id` 的短期多轮记忆
-- 大模型意图路由：`data_query`、`data_analysis`、`general_chat`
-- 大模型优先生成 SQL，规则生成兜底
-- Qdrant、Elasticsearch、MySQL fallback 混合元数据召回
-- 只读 SQL 校验和缺失 `LIMIT` 自动修复
-- 基于 SQL 查询结果生成自然语言分析
-- 通用 CSV 上传、自动建表和索引重建
-- `agent_extensions/` Skill/Tool 扩展系统
-- 内置估值、趋势、风险、数据画像分析工具
-
-## 架构流程
-
-```text
-React 聊天前端
-  -> FastAPI /api/chat
-  -> 短期对话记忆
-  -> 大模型意图路由
-  -> 元数据召回：Qdrant + Elasticsearch + MySQL fallback
-  -> 大模型优先 SQL 生成
-  -> 只读 SQL 校验和修复
+React + TypeScript 聊天前端
+  -> FastAPI Chat API / SSE 流式响应
+  -> 会话记忆与历史上下文
+  -> 大模型意图路由与问题改写
+  -> 复杂问题进入 Planner 拆解
+  -> 金融元数据 RAG 检索
+       -> Qdrant 向量检索
+       -> Elasticsearch 关键词检索
+       -> MySQL fallback
+  -> 大模型优先生成 SQL
+  -> SQL 安全校验 / 自动修复 / 人工确认
   -> SQLAlchemy 执行 MySQL 查询
-  -> Skill/Tool 工具分析
-  -> 自然语言回答
+  -> Skill / Tool 分析查询结果
+  -> 大模型生成自然语言回答
+  -> Trace / Evaluation / Task 记录
 ```
 
-CSV 接入流程：
+CSV 数据接入流程：
 
 ```text
 CSV 上传
-  -> 编码识别和表头清洗
+  -> 编码识别
+  -> 表头清洗
   -> MySQL 字段类型推断
-  -> uploaded_* 动态建表
-  -> 批量写入
-  -> MetadataCatalog 更新
-  -> Qdrant / Elasticsearch 索引重建
-  -> 自然语言查询和 Tool 分析
+  -> 创建 uploaded_* 动态表
+  -> 批量写入数据
+  -> 写入 MetadataCatalog
+  -> 重建 Qdrant / Elasticsearch 索引
+  -> 支持自然语言查询
 ```
 
-## 技术栈
+复杂分析流程：
 
-- 后端：FastAPI、LangGraph、LangChain、SQLAlchemy
-- 大模型：OpenAI-compatible Chat Completion API
-- 数据库：MySQL
-- 检索：Qdrant、Elasticsearch、MySQL fallback
-- 前端：React、TypeScript、Vite
-- 基础设施：Docker Compose
-- 可选数据工具：AKShare
+```text
+复杂分析问题
+  -> 大模型 Planner 或规则 Planner
+  -> 校验计划任务
+  -> 子任务 NL2SQL 查询
+  -> 空结果 Replan 重试
+  -> Skill / Tool 分析每个子任务
+  -> 生成综合分析回答
+```
 
-## 内置 Skill 和 Tool
+### 技术栈
 
-Skill 位于 `agent_extensions/skills/`。
-
-| Skill | 用途 |
+| 层级 | 技术 |
 | --- | --- |
-| `trend_analysis` | 匹配趋势、走势、收盘价、均线、波动、行情表现类问题 |
-| `valuation_analysis` | 匹配市盈率、估值、ROE、财务指标、排名、最高/最低类问题 |
-| `dataset_profile` | 匹配 CSV、上传数据、字段、分布、缺失值、数据画像类问题 |
+| 后端 | FastAPI, LangGraph, LangChain, SQLAlchemy |
+| 大模型 | OpenAI-compatible Chat Completion API |
+| 数据库 | MySQL |
+| 检索 | Qdrant, Elasticsearch, MySQL fallback |
+| 前端 | React, TypeScript, Vite |
+| 工程化 | Docker Compose, Pydantic, SSE |
+| 可观测性 | Trace 表、节点事件、执行耗时、错误记录 |
+| 评测 | NL2SQL 用例、Planner 用例、自动评分 |
 
-Tool 位于 `agent_extensions/tools/`。
+### 目录结构
 
-| Tool | 用途 |
-| --- | --- |
-| `moving_average_trend` | 计算最新值、区间变化、MA5/MA10 和短期趋势 |
-| `return_risk_summary` | 计算区间收益、波动率、最大回撤、最小值和最大值 |
-| `valuation_snapshot` | 计算估值/财务指标的均值、最低值、最高值和排名摘要 |
-| `dataset_profile` | 统计行数、列数、空值、数值字段范围和示例字段 |
+```text
+backend/
+  app/
+    api/                 FastAPI 路由
+    core/                配置与基础组件
+    db/                  SQLAlchemy 模型、数据库初始化、运行时表结构补齐
+    schemas/             请求和响应结构
+    services/            Agent、NL2SQL、检索、评测、工具、记忆等核心服务
+agent_extensions/
+  skills/                Skill 定义目录
+  tools/                 Tool 实现目录
+frontend/
+  src/                   React 前端页面
+infra/
+  docker-compose.yml     MySQL、Qdrant、Elasticsearch 等基础设施
+data_samples/            示例数据
+docs/                    项目文档和流程图
+```
 
-如果只复用已有工具函数，新增 Skill 时只需要在 `agent_extensions/skills/` 添加 JSON 文件并引用已有 tool 名称。如果要新增真正可执行的 Tool，需要在 `backend/app/services/skill_tool_manager.py` 中实现并注册 Python 函数，再在 `agent_extensions/tools/` 添加 JSON 元数据。
+### 环境要求
 
-## 环境要求
-
-- Docker Desktop 或支持 Docker Compose 的 Docker Engine
-- Python 3.11+
+- Python 3.10+
 - Node.js 18+
+- Docker Desktop
+- Git
 
-## 快速启动
+### 配置环境变量
 
-1. 启动基础服务。
-
-```bash
-docker compose -f infra/docker-compose.yml up -d
-```
-
-2. 创建并激活 Python 虚拟环境。
-
-Windows PowerShell：
-
-```powershell
-python -m venv .venv
-.\.venv\Scripts\Activate.ps1
-```
-
-macOS/Linux：
-
-```bash
-python -m venv .venv
-source .venv/bin/activate
-```
-
-3. 安装后端依赖。
-
-```bash
-pip install -r backend/requirements.txt
-```
-
-4. 创建本地环境文件。
-
-```bash
-cp .env.example .env
-```
-
-Windows PowerShell：
+首次运行时复制环境变量模板：
 
 ```powershell
 Copy-Item .env.example .env
 ```
 
-5. 初始化 Demo 数据和元数据索引。
+然后编辑 `.env`，配置自己的大模型服务：
 
-```bash
-export PYTHONPATH=./backend
-python backend/app/db/init_db.py
+```env
+LLM_API_KEY=your-api-key
+LLM_BASE_URL=https://your-openai-compatible-endpoint/v1
+LLM_MODEL=your-model-name
+```
+
+说明：
+
+- `.env` 包含私密信息，不应该提交到 GitHub。
+- 当前项目通过 OpenAI-compatible 协议调用大模型，只要服务兼容 `/chat/completions` 风格接口即可接入。
+
+### 启动顺序
+
+1. 启动 Docker Desktop。
+
+2. 启动基础设施：
+
+```powershell
+docker compose -f infra\docker-compose.yml up -d
+```
+
+3. 激活 Python 虚拟环境：
+
+```powershell
+.\.venv\Scripts\Activate.ps1
+```
+
+如果是首次拉取项目，需要先安装后端依赖：
+
+```powershell
+pip install -r backend\requirements.txt
+```
+
+4. 初始化数据库表：
+
+```powershell
+$env:PYTHONPATH="$PWD\backend"
+python backend\app\db\init_db.py
+```
+
+5. 重建元数据索引：
+
+```powershell
+$env:PYTHONPATH="$PWD\backend"
 python -c "from app.services.metadata_indexer import MetadataIndexer; print(MetadataIndexer().rebuild())"
 ```
 
-Windows PowerShell：
+6. 启动后端服务：
+
+```powershell
+$env:PYTHONPATH="$PWD\backend"
+.\.venv\Scripts\uvicorn.exe app.main:app --app-dir backend --host 127.0.0.1 --port 8000
+```
+
+7. 启动前端服务：
+
+```powershell
+cd frontend
+npm install
+npm run dev
+```
+
+8. 打开浏览器访问：
+
+```text
+http://127.0.0.1:5173
+```
+
+### 常用接口
+
+| 接口 | 说明 |
+| --- | --- |
+| `POST /api/chat/message` | 聊天式 Agent 查询 |
+| `GET /api/chat/stream` | SSE 流式响应 |
+| `POST /api/nl2sql/query` | NL2SQL 查询 |
+| `POST /api/datasets/upload` | 上传 CSV 并导入数据库 |
+| `GET /api/metadata/search` | 搜索元数据 |
+| `POST /api/metadata/index` | 重建元数据索引 |
+| `GET /api/extensions` | 查看 Skill/Tool 扩展 |
+| `GET /api/traces` | 查看请求 Trace |
+| `GET /api/traces/{trace_id}` | 查看 Trace 节点事件 |
+| `POST /api/evaluation/run` | 同步运行自动化评测 |
+| `POST /api/evaluation/run-async` | 异步运行自动化评测 |
+| `GET /api/tasks/{task_id}` | 查询后台任务状态 |
+
+### GitHub 提交建议
+
+建议提交源码、配置模板、文档和示例数据，不要提交本地运行产物。
+
+应该提交：
+
+```text
+README.md
+.gitignore
+.env.example
+backend/
+frontend/src/
+frontend/package.json
+frontend/package-lock.json
+infra/
+agent_extensions/
+data_samples/
+docs/
+```
+
+不要提交：
+
+```text
+.env
+.venv/
+.runtime/
+frontend/node_modules/
+frontend/dist/
+versions/
+tmp/
+github_url.txt
+__pycache__/
+*.pyc
+```
+
+推荐更新仓库命令：
+
+```powershell
+git status
+git add README.md .gitignore .env.example backend frontend agent_extensions infra data_samples docs
+git status
+git commit -m "Enhance financial data agent system"
+git push origin main
+```
+
+### 评测与验证
+
+后端代码编译检查：
+
+```powershell
+.\.venv\Scripts\python.exe -m compileall backend\app
+```
+
+前端构建检查：
+
+```powershell
+cd frontend
+npm run build
+```
+
+运行自动化评测：
+
+```powershell
+curl -X POST http://127.0.0.1:8000/api/evaluation/run
+```
+
+评测会覆盖 NL2SQL 查询、SQL 执行、语义命中、上下文召回、Planner 任务拆解等指标。
+
+### 安全设计
+
+- 仅允许 SELECT 查询。
+- 拦截 INSERT、UPDATE、DELETE、DROP、ALTER、TRUNCATE、CREATE 等写入或 DDL 操作。
+- 拦截多语句、SQL 注释、UNION、系统库访问、文件读写等风险。
+- 自动限制 LIMIT，避免一次性返回过多数据。
+- 对上传表访问、高 LIMIT、复杂 SQL 等场景触发人工确认。
+- API Key 只通过环境变量读取，不写入源码。
+
+## English
+
+### Overview
+
+This project is a financial data Agent system for natural-language querying and analysis. A user can ask questions in a chat UI, and the backend routes intent, retrieves metadata, generates SQL, validates and executes the query, calls analysis tools, and returns a natural-language answer.
+
+The system supports built-in stock data, market data, financial metrics, factor metrics, business metrics, and user-uploaded CSV datasets. For complex analysis questions, it can plan subtasks across market, valuation, financial, risk, business, and dataset dimensions.
+
+### Features
+
+- Chat-style financial data query and analysis UI.
+- LLM-based intent routing with rule-based fallback.
+- Query rewrite for follow-up questions and incomplete requests.
+- LLM-first NL2SQL generation with deterministic fallback.
+- LangGraph workflow for intent parsing, retrieval, SQL generation, validation, repair, and execution.
+- Hybrid metadata retrieval with Qdrant, Elasticsearch, and MySQL fallback.
+- Multi-step Planner for complex financial analysis.
+- Replan retry when a subtask returns empty rows.
+- Skill/Tool extension mechanism for financial analytics.
+- CSV ingestion with encoding detection, header cleanup, type inference, dynamic table creation, metadata registration, and index rebuild.
+- Read-only SQL validation, table whitelist, LIMIT enforcement, and high-risk SQL blocking.
+- Human-in-the-loop confirmation for risky queries.
+- Persistent chat sessions and short-term memory.
+- Trace logging for requests, nodes, model calls, tool calls, and errors.
+- Automated evaluation for NL2SQL and Planner behavior.
+- Background task support for asynchronous evaluation jobs.
+
+### Quick Start
+
+1. Start Docker Desktop.
+
+2. Start infrastructure:
+
+```powershell
+docker compose -f infra\docker-compose.yml up -d
+```
+
+3. Activate the Python virtual environment:
+
+```powershell
+.\.venv\Scripts\Activate.ps1
+```
+
+Install backend dependencies on first setup:
+
+```powershell
+pip install -r backend\requirements.txt
+```
+
+4. Configure environment variables:
+
+```powershell
+Copy-Item .env.example .env
+```
+
+Edit `.env` with your own OpenAI-compatible LLM endpoint and API key.
+
+5. Initialize database and indexes:
 
 ```powershell
 $env:PYTHONPATH="$PWD\backend"
@@ -378,94 +357,41 @@ python backend\app\db\init_db.py
 python -c "from app.services.metadata_indexer import MetadataIndexer; print(MetadataIndexer().rebuild())"
 ```
 
-6. 启动后端。
+6. Start backend:
 
-```bash
-uvicorn app.main:app --app-dir backend --host 127.0.0.1 --port 8000
+```powershell
+$env:PYTHONPATH="$PWD\backend"
+.\.venv\Scripts\uvicorn.exe app.main:app --app-dir backend --host 127.0.0.1 --port 8000
 ```
 
-7. 另开终端启动前端。
+7. Start frontend:
 
-```bash
+```powershell
 cd frontend
 npm install
 npm run dev
 ```
 
-打开：
+8. Open:
 
 ```text
 http://127.0.0.1:5173
 ```
 
-## 配置说明
+### Repository Update
 
-后端配置从 `.env` 读取。
+Recommended commands:
 
-| 变量 | 说明 |
-| --- | --- |
-| `MYSQL_HOST`, `MYSQL_PORT`, `MYSQL_USER`, `MYSQL_PASSWORD`, `MYSQL_DATABASE` | MySQL 连接配置 |
-| `QDRANT_URL` | Qdrant HTTP 地址 |
-| `ELASTICSEARCH_URL` | Elasticsearch 地址 |
-| `CORS_ORIGINS` | 前端来源白名单，多个值用逗号分隔 |
-| `OPENAI_API_KEY` | OpenAI-compatible API Key |
-| `OPENAI_MODEL` | 聊天模型名称 |
-| `OPENAI_BASE_URL` | 可选 OpenAI-compatible Base URL |
-
-智谱等 OpenAI-compatible API 示例：
-
-```env
-OPENAI_MODEL=glm-5.2
-OPENAI_BASE_URL=https://open.bigmodel.cn/api/paas/v4/
+```powershell
+git status
+git add README.md .gitignore .env.example backend frontend agent_extensions infra data_samples docs
+git status
+git commit -m "Enhance financial data agent system"
+git push origin main
 ```
 
-不要提交 `.env`。
+Do not commit `.env`, virtual environments, runtime logs, dependency folders, build outputs, snapshots, or temporary files.
 
-前端可在 `frontend/.env` 中配置：
+### License
 
-```text
-VITE_API_BASE_URL=http://localhost:8000
-```
-
-## API 概览
-
-| 接口 | 说明 |
-| --- | --- |
-| `POST /api/chat/message` | 聊天请求，返回完整 JSON |
-| `POST /api/chat/stream` | 前端使用的 SSE 聊天流 |
-| `DELETE /api/chat/sessions/{session_id}` | 清空短期记忆 |
-| `POST /api/nl2sql/query` | 兼容旧版 NL2SQL JSON 查询 |
-| `POST /api/nl2sql/stream` | 兼容旧版 NL2SQL SSE 查询 |
-| `POST /api/datasets/upload` | 上传 CSV 并重建索引 |
-| `GET /api/metadata/search` | 搜索元数据 |
-| `POST /api/metadata/index` | 重建元数据索引 |
-| `GET /api/extensions` | 查看已加载的 Skill 和 Tool |
-
-## 示例问题
-
-```text
-市盈率最低的股票有哪些？
-分析市盈率最低的股票估值情况
-分析贵州茅台近期收盘价趋势和波动
-查询我上传的 CSV 数据
-总结刚才的查询结果
-```
-
-## 目录结构
-
-```text
-agent_extensions/   Skill 和 Tool JSON 定义
-backend/            FastAPI 后端、Agent 工作流、数据库模型、CSV 导入器
-frontend/           React/Vite 聊天前端
-infra/              Docker Compose 服务配置
-data_samples/       CSV 示例文件
-docs/               架构说明和流程图
-```
-
-## 安全说明
-
-- 生成 SQL 会经过只读 `SELECT` 校验。
-- 禁止多语句、写入语句和 DDL 关键词。
-- 缺失 `LIMIT` 的 SQL 会自动修复。
-- 用户上传表必须使用 `uploaded_` 前缀。
-- 本项目是 Demo/研究项目，不构成金融投资建议。
+This project is intended for learning, portfolio demonstration, and engineering practice. Please review data source licenses and API provider terms before production use.

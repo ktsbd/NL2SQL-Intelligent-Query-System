@@ -251,6 +251,25 @@ textarea:focus, input:focus { border-color: #2e8fcb; box-shadow: 0 0 0 3px rgba(
 .skill-list small { color: #66778c; font-size: 12px; overflow-wrap: anywhere; }
 .tool-card { background: #f7fbf9; border-color: #cfeee4; }
 
+.confirm-bubble {
+  border: 1px solid #f3ca77;
+  background: #fff8e8;
+}
+.confirm-bubble button {
+  width: fit-content;
+  border: none;
+  border-radius: 8px;
+  padding: 8px 12px;
+  background: #9a5b00;
+  color: #fff;
+  font-weight: 700;
+  cursor: pointer;
+}
+.confirm-bubble button:disabled {
+  cursor: not-allowed;
+  opacity: .65;
+}
+
 pre {
   margin: 0;
   max-height: 220px;

@@ -12,6 +12,7 @@ type ContextItem = {
 };
 
 type ChatResponse = {
+  trace_id?: string;
   session_id: string;
   route: string;
   answer: string;
@@ -36,6 +37,8 @@ type ChatResponse = {
     output: Record<string, unknown>;
   }[];
   history: { role: string; content: string; created_at: string }[];
+  requires_confirmation?: boolean;
+  confirmation_reason?: string | null;
 };
 
 type ChatMessage = {
@@ -78,7 +81,7 @@ function App() {
 
   const tableRows = useMemo(() => latest?.rows ?? [], [latest]);
 
-  async function sendMessage(nextInput = input) {
+  async function sendMessage(nextInput = input, confirmed = false) {
     const message = nextInput.trim();
     if (!message || loading) return;
     setInput('');
@@ -90,7 +93,7 @@ function App() {
       const response = await fetch(`${API_BASE}/api/chat/stream`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ message, session_id: sessionId || null, limit }),
+        body: JSON.stringify({ message, session_id: sessionId || null, limit, confirmed }),
       });
       if (!response.ok || !response.body) {
         throw new Error('聊天请求启动失败');
@@ -265,6 +268,18 @@ function App() {
               <article className="message assistant">
                 <div className="avatar"><Bot size={17} /></div>
                 <div className="bubble loading-bubble"><Loader2 className="spin" size={16} />思考中</div>
+              </article>
+            )}
+            {latest?.requires_confirmation && (
+              <article className="message assistant">
+                <div className="avatar"><Bot size={17} /></div>
+                <div className="bubble confirm-bubble">
+                  <span className="route-label">human_in_the_loop</span>
+                  <p>{latest.confirmation_reason || '该操作需要确认后执行。'}</p>
+                  <button type="button" onClick={() => sendMessage(latest.question, true)} disabled={loading}>
+                    确认执行
+                  </button>
+                </div>
               </article>
             )}
           </div>

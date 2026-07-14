@@ -7,6 +7,7 @@ from app.services.metadata_retriever import MetadataRetriever
 from app.services.nl2sql_generator import NL2SQLGenerator
 from app.services.sql_executor import SQLExecutor
 from app.services.intent_router import LLMIntentRouter
+from app.services.human_gate import HumanApprovalGate
 
 
 class NL2SQLState(TypedDict, total=False):
@@ -20,6 +21,9 @@ class NL2SQLState(TypedDict, total=False):
     rows: list[dict[str, Any]]
     error: str | None
     repair_attempted: bool
+    confirmed: bool
+    requires_confirmation: bool
+    confirmation_reason: str
     steps: list[str]
 
 
@@ -30,15 +34,19 @@ class NL2SQLWorkflow:
         self.llm_generator = LLMSQLGenerator()
         self.router = LLMIntentRouter()
         self.executor = SQLExecutor()
+        self.human_gate = HumanApprovalGate()
         self.graph = self._build_graph()
 
-    def run(self, question: str, limit: int = 10) -> dict[str, Any]:
+    def run(self, question: str, limit: int = 10, confirmed: bool = False) -> dict[str, Any]:
         initial_state: NL2SQLState = {
             "question": question,
             "limit": limit,
             "steps": [],
             "error": None,
             "repair_attempted": False,
+            "confirmed": confirmed,
+            "requires_confirmation": False,
+            "confirmation_reason": "",
         }
         return self.graph.invoke(initial_state)
 
@@ -75,8 +83,9 @@ class NL2SQLWorkflow:
         }
 
     def _retrieve_context(self, state: NL2SQLState) -> NL2SQLState:
-        context = self.retriever.search(state["question"], limit=8)
-        return {**state, "context": context, "steps": [*state.get("steps", []), "retrieve_context"]}
+        context, diagnostics = self.retriever.search_with_diagnostics(state["question"], limit=8)
+        step = f"retrieve_context:rounds={diagnostics.get('rounds', 1)}"
+        return {**state, "context": context, "retrieval_diagnostics": diagnostics, "steps": [*state.get("steps", []), step]}
 
     def _generate_sql(self, state: NL2SQLState) -> NL2SQLState:
         generated = self.llm_generator.generate(state["question"], state.get("context", []), state["limit"])
@@ -103,7 +112,16 @@ class NL2SQLWorkflow:
             self.executor.validate(state["sql"])
         except ValueError as exc:
             return {**state, "error": str(exc), "steps": [*state.get("steps", []), "validate_sql"]}
-        return {**state, "error": None, "steps": [*state.get("steps", []), "validate_sql"]}
+        confirmation = self.human_gate.check(question=state["question"], sql=state["sql"], limit=state["limit"])
+        if confirmation.required and not state.get("confirmed"):
+            return {
+                **state,
+                "error": None,
+                "requires_confirmation": True,
+                "confirmation_reason": confirmation.reason,
+                "steps": [*state.get("steps", []), "validate_sql", "human_confirmation_required"],
+            }
+        return {**state, "error": None, "requires_confirmation": False, "steps": [*state.get("steps", []), "validate_sql"]}
 
     def _repair_sql(self, state: NL2SQLState) -> NL2SQLState:
         repaired_sql = self.executor.repair(state["sql"], default_limit=state["limit"])
@@ -115,6 +133,8 @@ class NL2SQLWorkflow:
 
     def _route_after_validation(self, state: NL2SQLState) -> str:
         if not state.get("error"):
+            if state.get("requires_confirmation"):
+                return "finish"
             return "execute"
         if not state.get("repair_attempted"):
             return "repair"

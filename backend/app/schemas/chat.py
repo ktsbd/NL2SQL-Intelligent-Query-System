@@ -7,9 +7,11 @@ class ChatRequest(BaseModel):
     message: str = Field(..., min_length=1)
     session_id: str | None = None
     limit: int = Field(default=10, ge=1, le=50)
+    confirmed: bool = False
 
 
 class ChatResponse(BaseModel):
+    trace_id: str | None = None
     session_id: str
     route: str
     answer: str
@@ -22,4 +24,7 @@ class ChatResponse(BaseModel):
     rows: list[dict[str, object]] = Field(default_factory=list)
     matched_skills: list[dict[str, object]] = Field(default_factory=list)
     tool_results: list[dict[str, object]] = Field(default_factory=list)
+    plan_results: list[dict[str, object]] = Field(default_factory=list)
     history: list[dict[str, str]] = Field(default_factory=list)
+    requires_confirmation: bool = False
+    confirmation_reason: str | None = None
